@@ -156,7 +156,11 @@ export async function getPoolReserves(
     // @ts-ignore: Type 'number' is not assignable to type 'bigint'
     reserves.issuedLiquidity = Number(reserves.issuedLiquidity);
 
-    throw new Error(`Invalid pool reserves: ${JSON.stringify(reserves)}`);
+    throw new Error(
+      `Invalid pool reserves: ${JSON.stringify(reserves, (_key: string, value: any) =>
+        typeof value === "bigint" ? value.toString() : value
+      )}`
+    );
   }
 
   return reserves;
