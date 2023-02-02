@@ -18,6 +18,7 @@ import {getAccountExcessWithinPool} from "../../util/account/accountUtils";
 import {SwapQuote, V1SwapExecution} from "../types";
 import {SwapType} from "../constants";
 import {calculatePriceImpact, calculateSwapRate} from "../common/utils";
+import OutputAmountExceedsAvailableLiquidityError from "../../util/error/OutputAmountExceedsAvailableLiquidityError";
 import {AssetWithIdAndAmount} from "../../util/asset/assetModels";
 import {tinymanJSSDKConfig} from "../../config";
 import {CONTRACT_VERSION} from "../../contract/constants";
@@ -241,7 +242,7 @@ function getFixedInputSwapQuote({
   const assetOutAmount = outputSupply - k / (inputSupply + assetInAmountMinusFee);
 
   if (assetOutAmount > outputSupply) {
-    throw new Error("Output amount exceeds available liquidity.");
+    throw new OutputAmountExceedsAvailableLiquidityError();
   }
 
   const assetDataForSwapUtils = {
@@ -377,7 +378,7 @@ function getFixedOutputSwapQuote({
   }
 
   if (assetOutAmount > outputSupply) {
-    throw new Error("Output amount exceeds available liquidity.");
+    throw new OutputAmountExceedsAvailableLiquidityError();
   }
 
   const k = inputSupply * outputSupply;
