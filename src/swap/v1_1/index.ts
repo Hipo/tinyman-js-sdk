@@ -15,7 +15,11 @@ import {DEFAULT_FEE_TXN_NOTE} from "../../util/constant";
 import {ALGO_ASSET_ID} from "../../util/asset/assetConstants";
 import {PoolReserves, PoolStatus, V1PoolInfo} from "../../util/pool/poolTypes";
 import {getAccountExcessWithinPool} from "../../util/account/accountUtils";
-import {SwapQuote, V1SwapExecution} from "../types";
+import {
+  DirectSwapQuote,
+  GenerateSwapTxnsWithoutRouterParams,
+  V1SwapExecution
+} from "../types";
 import {SwapType} from "../constants";
 import {calculatePriceImpact, calculateSwapRate} from "../common/utils";
 import OutputAmountExceedsAvailableLiquidityError from "../../util/error/OutputAmountExceedsAvailableLiquidityError";
@@ -68,15 +72,7 @@ async function generateTxns({
   assetOut,
   slippage,
   initiatorAddr
-}: {
-  client: Algodv2;
-  pool: V1PoolInfo;
-  swapType: SwapType;
-  assetIn: AssetWithIdAndAmount;
-  assetOut: AssetWithIdAndAmount;
-  slippage: number;
-  initiatorAddr: string;
-}): Promise<SignerTransaction[]> {
+}: GenerateSwapTxnsWithoutRouterParams): Promise<SignerTransaction[]> {
   const poolAddress = pool.account.address();
   const poolAssets = [pool.asset1ID, pool.asset2ID];
 
@@ -196,8 +192,8 @@ function getQuote(
   reserves: PoolReserves,
   asset: AssetWithIdAndAmount,
   decimals: {assetIn: number; assetOut: number}
-): SwapQuote {
-  let quote;
+): DirectSwapQuote {
+  let quote: DirectSwapQuote;
 
   if (type === SwapType.FixedInput) {
     quote = getFixedInputSwapQuote({pool, reserves, assetIn: asset, decimals});
@@ -227,7 +223,7 @@ function getFixedInputSwapQuote({
   reserves: PoolReserves;
   assetIn: AssetWithIdAndAmount;
   decimals: {assetIn: number; assetOut: number};
-}): SwapQuote {
+}): DirectSwapQuote {
   if (pool.status !== PoolStatus.READY) {
     throw new TinymanError({pool, assetIn}, "Trying to swap on a non-existent pool");
   }
@@ -378,7 +374,7 @@ function getFixedOutputSwapQuote({
   reserves: PoolReserves;
   assetOut: AssetWithIdAndAmount;
   decimals: {assetIn: number; assetOut: number};
-}): SwapQuote {
+}): DirectSwapQuote {
   if (pool.status !== PoolStatus.READY) {
     throw new TinymanError({pool, assetOut}, "Trying to swap on a non-existent pool");
   }
