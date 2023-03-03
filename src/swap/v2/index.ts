@@ -7,13 +7,10 @@ import {
 } from "../../util/util";
 import {InitiatorSigner, SignerTransaction} from "../../util/commonTypes";
 import TinymanError from "../../util/error/TinymanError";
-import {PoolStatus} from "../../util/pool/poolTypes";
+import {PoolStatus, V2PoolInfo} from "../../util/pool/poolTypes";
 import {
   DirectSwapQuote,
   GenerateSwapTxnsParams,
-  GetFixedInputSwapQuoteByContractVersionParams,
-  GetFixedOutputSwapQuoteByContractVersionParams,
-  GetSwapQuoteWithContractVersionParams,
   SwapQuote,
   SwapQuoteType,
   V2SwapExecution
@@ -37,36 +34,41 @@ import {generateSwapRouterTxns, getSwapRoute} from "./router/swap-router";
 async function generateTxns(
   params: GenerateSwapTxnsParams
 ): Promise<SignerTransaction[]> {
-  if (params.isUsingSwapRouter) {
-    return generateSwapRouterTxns(params);
+  if (params.quote.type === SwapQuoteType.Router) {
+    return generateSwapRouterTxns({...params, route: params.quote.route});
   }
 
-  const {assetIn, assetOut, client, initiatorAddr, pool, slippage, swapType} = params;
+  const {client, initiatorAddr, slippage, swapType, quote} = params;
+
+  const {
+    quoteWithPool: {pool, quote: swapQuote}
+  } = quote;
+  const {assetInID, assetOutID} = swapQuote;
 
   const poolAddress = pool.account.address();
   const poolAssets = [pool.asset1ID, pool.asset2ID];
 
   if (
-    !poolAssets.includes(assetIn.id) ||
-    !poolAssets.includes(assetOut.id) ||
-    assetIn.id === assetOut.id
+    !poolAssets.includes(assetInID) ||
+    !poolAssets.includes(assetOutID) ||
+    assetInID === assetOutID
   ) {
     throw new TinymanError(
-      {pool, assetIn, assetOut},
-      `Input asset (#${assetIn.id}) and output asset (#${assetOut.id}) provided to generate transactions do not belong to the pool ${poolAddress}.`
+      {pool, quote},
+      `Input asset (#${assetInID}) and output asset (#${assetOutID}) provided to generate transactions do not belong to the pool ${poolAddress}.`
     );
   }
 
   const suggestedParams = await client.getTransactionParams().do();
-  const isAssetInAlgo = isAlgo(assetIn.id);
+  const isAssetInAlgo = isAlgo(assetInID);
   const assetInAmount =
     swapType === SwapType.FixedInput
-      ? assetIn.amount
-      : applySlippageToAmount("positive", slippage, assetIn.amount);
+      ? swapQuote.assetInAmount
+      : applySlippageToAmount("positive", slippage, swapQuote.assetInAmount);
   const assetOutAmount =
     swapType === SwapType.FixedOutput
-      ? assetOut.amount
-      : applySlippageToAmount("negative", slippage, assetOut.amount);
+      ? swapQuote.assetOutAmount
+      : applySlippageToAmount("negative", slippage, swapQuote.assetOutAmount);
 
   /**
    * If the input asset is Algo, a payment txn, otherwise an asset transfer txn is required
@@ -82,7 +84,7 @@ async function generateTxns(
         from: initiatorAddr,
         to: poolAddress,
         amount: assetInAmount,
-        assetIndex: assetIn.id,
+        assetIndex: assetInID,
         suggestedParams
       });
 
@@ -145,14 +147,12 @@ async function execute({
   client,
   quote,
   txGroup,
-  signedTxns,
-  assetIn
+  signedTxns
 }: {
   client: Algodv2;
   quote: SwapQuote;
   txGroup: SignerTransaction[];
   signedTxns: Uint8Array[];
-  assetIn: AssetWithIdAndAmount;
 }): Promise<V2SwapExecution> {
   const [{confirmedRound, txnID}] = await sendAndWaitRawTransaction(client, [signedTxns]);
   const assetOutId =
@@ -166,6 +166,17 @@ async function execute({
   } catch (_error) {
     // We can ignore this error since the main execution was successful
   }
+
+  const assetIn: AssetWithIdAndAmount =
+    quote.type === SwapQuoteType.Direct
+      ? {
+          id: quote.quoteWithPool.quote.assetInID,
+          amount: quote.quoteWithPool.quote.assetInAmount
+        }
+      : {
+          id: Number(quote.asset_in_id),
+          amount: Number(quote.route[0].quote.amount_in.amount)
+        };
 
   /**
    * If the swap type if Fixed Output, usually there will be a difference between
@@ -202,9 +213,12 @@ async function execute({
  * @returns A promise for the Swap quote
  */
 async function getQuote(
-  params: GetSwapQuoteWithContractVersionParams
+  type: SwapType,
+  pool: V2PoolInfo,
+  asset: AssetWithIdAndAmount,
+  decimals: {assetIn: number; assetOut: number},
+  isSwapRouterEnabled?: boolean
 ): Promise<SwapQuote> {
-  const {asset, decimals, pool, type, isSwapRouterEnabled} = params;
   let quote: SwapQuote;
 
   if (type === SwapType.FixedInput) {
@@ -230,11 +244,16 @@ async function getQuote(
  * @returns A quote for a fixed input swap. Does NOT execute any transactions.
  */
 async function getFixedInputSwapQuote({
-  pool,
   assetIn,
   decimals,
+  pool,
   isSwapRouterEnabled
-}: GetFixedInputSwapQuoteByContractVersionParams): Promise<SwapQuote> {
+}: {
+  pool: V2PoolInfo;
+  assetIn: AssetWithIdAndAmount;
+  decimals: {assetIn: number; assetOut: number};
+  isSwapRouterEnabled?: boolean;
+}): Promise<SwapQuote> {
   if (pool.status !== PoolStatus.READY) {
     throw new TinymanError({pool, assetIn}, "Trying to swap on a non-existent pool");
   }
@@ -318,11 +337,16 @@ async function getFixedInputSwapQuote({
  * @returns A quote for a fixed output swap. Does NOT execute any transactions.
  */
 async function getFixedOutputSwapQuote({
-  pool,
   assetOut,
   decimals,
+  pool,
   isSwapRouterEnabled
-}: GetFixedOutputSwapQuoteByContractVersionParams): Promise<SwapQuote> {
+}: {
+  pool: V2PoolInfo;
+  assetOut: AssetWithIdAndAmount;
+  decimals: {assetIn: number; assetOut: number};
+  isSwapRouterEnabled?: boolean;
+}): Promise<SwapQuote> {
   if (pool.status !== PoolStatus.READY) {
     throw new TinymanError({pool, assetOut}, "Trying to swap on a non-existent pool");
   }
