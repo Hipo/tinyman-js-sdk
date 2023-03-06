@@ -5,7 +5,11 @@ import {
   convertFromBaseUnits,
   sendAndWaitRawTransaction
 } from "../../util/util";
-import {InitiatorSigner, SignerTransaction} from "../../util/commonTypes";
+import {
+  InitiatorSigner,
+  SignerTransaction,
+  SupportedNetwork
+} from "../../util/commonTypes";
 import TinymanError from "../../util/error/TinymanError";
 import {PoolStatus, V2PoolInfo} from "../../util/pool/poolTypes";
 import {
@@ -212,11 +216,13 @@ async function execute({
  * @param decimals.assetOut - Decimals quantity for the output asset
  * @returns A promise for the Swap quote
  */
+// eslint-disable-next-line max-params
 async function getQuote(
   type: SwapType,
   pool: V2PoolInfo,
   asset: AssetWithIdAndAmount,
   decimals: {assetIn: number; assetOut: number},
+  network: SupportedNetwork,
   isSwapRouterEnabled?: boolean
 ): Promise<SwapQuote> {
   let quote: SwapQuote;
@@ -226,14 +232,16 @@ async function getQuote(
       pool,
       assetIn: asset,
       decimals,
-      isSwapRouterEnabled
+      isSwapRouterEnabled,
+      network
     });
   } else {
     quote = await getFixedOutputSwapQuote({
       pool,
       assetOut: asset,
       decimals,
-      isSwapRouterEnabled
+      isSwapRouterEnabled,
+      network
     });
   }
 
@@ -247,11 +255,13 @@ async function getFixedInputSwapQuote({
   assetIn,
   decimals,
   pool,
-  isSwapRouterEnabled
+  isSwapRouterEnabled,
+  network
 }: {
   pool: V2PoolInfo;
   assetIn: AssetWithIdAndAmount;
   decimals: {assetIn: number; assetOut: number};
+  network: SupportedNetwork;
   isSwapRouterEnabled?: boolean;
 }): Promise<SwapQuote> {
   if (pool.status !== PoolStatus.READY) {
@@ -309,7 +319,8 @@ async function getFixedInputSwapQuote({
       amount: assetIn.amount,
       assetInID: Number(assetIn.id),
       assetOutID,
-      swapType: SwapType.FixedInput
+      swapType: SwapType.FixedInput,
+      network
     });
 
     if (
@@ -340,11 +351,13 @@ async function getFixedOutputSwapQuote({
   assetOut,
   decimals,
   pool,
-  isSwapRouterEnabled
+  isSwapRouterEnabled,
+  network
 }: {
   pool: V2PoolInfo;
   assetOut: AssetWithIdAndAmount;
   decimals: {assetIn: number; assetOut: number};
+  network: SupportedNetwork;
   isSwapRouterEnabled?: boolean;
 }): Promise<SwapQuote> {
   if (pool.status !== PoolStatus.READY) {
@@ -403,7 +416,8 @@ async function getFixedOutputSwapQuote({
       amount: assetOut.amount,
       assetInID,
       assetOutID: assetOut.id,
-      swapType: SwapType.FixedInput
+      swapType: SwapType.FixedInput,
+      network
     });
 
     if (
