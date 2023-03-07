@@ -70,6 +70,7 @@ export declare type GetSwapQuoteParams = {
     amount: number | bigint;
     type: SwapType;
     network: SupportedNetwork;
+    /** If `true`, the function will also check the quotes that use swap route */
     isSwapRouterEnabled?: boolean;
 };
 export interface SwapQuoteWithPool {
@@ -83,12 +84,6 @@ export declare type SwapQuote = {
     type: SwapQuoteType.Router;
 });
 export declare type GetSwapQuoteBySwapTypeParams = Omit<GetSwapQuoteParams, "type">;
-export interface FetchSwapRouteQuotesPayload {
-    asset_in_id: string;
-    asset_out_id: string;
-    amount: string;
-    swap_type: SwapType;
-}
 export interface SwapRouteAsset {
     id: string;
     name: string;
@@ -143,6 +138,12 @@ export interface SwapRouterQuote {
     };
     price: number;
     price_impact: number;
+}
+export interface FetchSwapRouteQuotesPayload {
+    asset_in_id: string;
+    asset_out_id: string;
+    amount: string;
+    swap_type: SwapType;
 }
 export declare type FetchSwapRouteQuotesResponse = FetchSwapRouteQuotesPayload & {
     route: SwapRoute;
