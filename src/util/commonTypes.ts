@@ -41,3 +41,12 @@ export type TxnResponseInnerTxns = {
         };
   };
 }[];
+export interface TinymanApiErrorDetailShape {
+  [x: string]: undefined | any;
+}
+
+export interface TinymanApiErrorShape<Type extends string = string> {
+  type: Type;
+  detail: TinymanApiErrorDetailShape;
+  fallback_message: string;
+}

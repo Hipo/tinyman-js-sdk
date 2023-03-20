@@ -1,3 +1,4 @@
+import SwapQuoteError from "./util/error/SwapQuoteError";
 export type { InitiatorSigner, SignerTransaction, SupportedNetwork } from "./util/commonTypes";
 export { BASE_MINIMUM_BALANCE, MINIMUM_BALANCE_REQUIRED_PER_ASSET, MINIMUM_BALANCE_REQUIRED_PER_APP, MINIMUM_BALANCE_REQUIRED_PER_BYTE_SCHEMA, MINIMUM_BALANCE_REQUIRED_PER_INT_SCHEMA_VALUE, MINIMUM_ADD_LIQUIDITY_AMOUNT } from "./util/constant";
 export * from "./swap/v2/router";
@@ -30,9 +31,12 @@ export { V2_REMOVE_LIQUIDITY_APP_CALL_INNER_TXN_COUNT } from "./remove-liquidity
 export { RemoveLiquidity } from "./remove-liquidity";
 export type { SwapQuote, V1SwapExecution, V2SwapExecution, DirectSwapQuote, SwapRoute, GenerateSwapTxnsParams } from "./swap/types";
 export { getSwapTotalFee } from "./swap/utils";
+export * from "./swap/v2/util";
 export { SwapType } from "./swap/constants";
 export { Swap } from "./swap";
 export { SwapQuoteType } from "./swap/types";
+export { SwapQuoteError };
+export { SwapQuoteErrorType } from "./util/error/SwapQuoteError";
 export { redeemExcessAsset, redeemAllExcessAsset, generateRedeemTxns, REDEEM_PROCESS_TXN_COUNT } from "./redeem";
 export { prepareCommitTransactions, getStakingAppID } from "./stake";
 export { tinymanJSSDKConfig } from "./config";
