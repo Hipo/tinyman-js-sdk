@@ -13,6 +13,7 @@ export interface TinymanAnalyticsApiAsset {
   decimals: number;
   url: string;
   total_amount: string;
+  clawback_address: string;
   liquidity_in_usd?: null | string;
   last_day_volume_in_usd?: null | string;
   last_day_price_change?: null | string;
@@ -52,6 +53,11 @@ interface IndexerAssetParams {
 export interface AssetWithIdAndAmount {
   id: number;
   amount: number | bigint;
+}
+
+export interface AssetWithIdAndDecimals {
+  id: number;
+  decimals: number;
 }
 
 export interface AssetWithAmountAndDecimals {

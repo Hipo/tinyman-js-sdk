@@ -1,6 +1,6 @@
 import { Algodv2 } from "algosdk";
 import { AssetWithIdAndAmount, TinymanAnalyticsApiAsset } from "../util/asset/assetModels";
-import { SupportedNetwork } from "../util/commonTypes";
+import { SignerTransaction, SupportedNetwork } from "../util/commonTypes";
 import { PoolReserves, V1PoolInfo, V2PoolInfo } from "../util/pool/poolTypes";
 import { SwapType } from "./constants";
 export declare enum SwapQuoteType {
@@ -106,15 +106,8 @@ export interface GenerateSwapTxnsParams {
     initiatorAddr: string;
 }
 export declare type GenerateV1_1SwapTxnsParams = Omit<GenerateSwapTxnsParams, "quote" | "network"> & {
-    quote: DirectSwapQuoteAndPool;
+    quoteAndPool: DirectSwapQuoteAndPool;
 };
-export interface GenerateSwapRouterTxnsParams {
-    client: Algodv2;
-    initiatorAddr: string;
-    swapType: SwapType;
-    route: SwapRoute;
-    network: SupportedNetwork;
-}
 /** An object containing information about a successfully executed swap. */
 export interface V1SwapExecution {
     /** The round that the swap occurred in. */
@@ -153,4 +146,12 @@ export interface V2SwapExecution {
     quote: SwapQuote;
     txnID: string;
     round: number;
+}
+export interface ExecuteSwapCommonParams {
+    swapType: SwapType;
+    client: Algodv2;
+    network: SupportedNetwork;
+    txGroup: SignerTransaction[];
+    signedTxns: Uint8Array[];
+    assetIn: AssetWithIdAndAmount;
 }

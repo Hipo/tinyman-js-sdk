@@ -1,4 +1,4 @@
-import algosdk, {Algodv2, ALGORAND_MIN_TX_FEE, Transaction} from "algosdk";
+import algosdk, {Algodv2, Transaction} from "algosdk";
 
 import {
   applySlippageToAmount,
@@ -23,24 +23,24 @@ import {SwapType} from "../constants";
 import {
   V2_SWAP_APP_CALL_ARG_ENCODED,
   V2_SWAP_APP_CALL_SWAP_TYPE_ARGS_ENCODED,
-  V2SwapTxnGroupIndices,
-  V2_SWAP_APP_CALL_INNER_TXN_COUNT
+  V2SwapTxnGroupIndices
 } from "./constants";
 import {isAlgo} from "../../util/asset/assetUtils";
 import {getAppCallInnerAssetData} from "../../util/transaction/transactionUtils";
-import {AssetWithIdAndAmount} from "../../util/asset/assetModels";
 import {
   calculatePriceImpact,
   getAssetInFromSwapQuote,
-  getAssetOutFromSwapQuote
+  getAssetOutFromSwapQuote,
+  getBestQuote,
+  isSwapQuoteErrorCausedByAmount
 } from "../common/utils";
 import {tinymanJSSDKConfig} from "../../config";
 import {CONTRACT_VERSION} from "../../contract/constants";
 import {generateSwapRouterTxns, getSwapRoute} from "./router/swap-router";
 import {poolUtils} from "../../util/pool";
-import {getBestQuote, isSwapQuoteErrorCausedByAmount} from "../utils";
 import SwapQuoteError, {SwapQuoteErrorType} from "../../util/error/SwapQuoteError";
-import {isSwapAssetInAmountLow} from "./util";
+import {getSwapAppCallFeeAmount, isSwapAssetInAmountLow} from "./util";
+import {AssetWithIdAndDecimals, AssetWithIdAndAmount} from "../../util/asset/assetModels";
 
 async function generateTxns(
   params: GenerateSwapTxnsParams
@@ -144,13 +144,6 @@ function signTxns({
   return initiatorSigner([txGroup]);
 }
 
-function getSwapAppCallFeeAmount(swapType: SwapType) {
-  // Add +1 to account for the outer txn fee
-  const totalTxnCount = V2_SWAP_APP_CALL_INNER_TXN_COUNT[swapType] + 1;
-
-  return totalTxnCount * ALGORAND_MIN_TX_FEE;
-}
-
 /**
  * Executes a swap with the desired quantities.
  */
@@ -205,28 +198,27 @@ async function execute({
 /**
  * @param type - Type of the swap
  * @param pool - Information for the pool.
- * @param asset.assetID - ID of the asset to be swapped
- * @param asset.amount - Amount of the asset to be swapped
- * @param decimals.assetIn - Decimals quantity for the input asset
- * @param decimals.assetOut - Decimals quantity for the output asset
+ * @param assetIn - Asset to be swapped
+ * @param assetOut - Asset to be received
+ * @param amount - Amount of asset to be swapped
+ * @param network - Network to be used
+ * @param isSwapRouterEnabled - Whether the swap router is enabled
  * @returns A promise for the Swap quote
  */
 async function getQuote({
   type,
   amount,
-  assetInID,
-  assetOutID,
-  decimals,
+  assetIn,
+  assetOut,
   network,
   isSwapRouterEnabled,
   pool
 }: {
   type: SwapType;
   amount: number | bigint;
-  assetInID: number;
-  assetOutID: number;
+  assetIn: AssetWithIdAndDecimals;
+  assetOut: AssetWithIdAndDecimals;
   pool: V2PoolInfo | null;
-  decimals: {assetIn: number; assetOut: number};
   network: SupportedNetwork;
   isSwapRouterEnabled?: boolean;
 }): Promise<SwapQuote> {
@@ -234,10 +226,9 @@ async function getQuote({
 
   if (type === SwapType.FixedInput) {
     quote = await getFixedInputSwapQuote({
-      assetInID,
-      assetOutID,
+      assetIn,
+      assetOut,
       amount,
-      decimals,
       isSwapRouterEnabled,
       network,
       pool
@@ -245,9 +236,8 @@ async function getQuote({
   } else {
     quote = await getFixedOutputSwapQuote({
       amount,
-      assetInID,
-      assetOutID,
-      decimals,
+      assetIn,
+      assetOut,
       isSwapRouterEnabled,
       network,
       pool
@@ -286,7 +276,7 @@ function validateQuotes(quotePromises: Promise<SwapQuote>[]): Promise<SwapQuote[
 
     return (
       results.filter(
-        (result) => result.status === "fulfilled" && result.value !== undefined
+        (result) => result.status === "fulfilled" && result.value
       ) as PromiseFulfilledResult<SwapQuote>[]
     ).map((result) => result.value);
   });
@@ -294,23 +284,26 @@ function validateQuotes(quotePromises: Promise<SwapQuote>[]): Promise<SwapQuote[
 
 function getFixedInputDirectSwapQuote({
   amount,
-  assetInID,
-  assetOutID,
-  decimals,
+  assetIn,
+  assetOut,
   pool
 }: {
   pool: V2PoolInfo;
   amount: number | bigint;
-  assetInID: number;
-  assetOutID: number;
-  decimals: {assetIn: number; assetOut: number};
+  assetIn: AssetWithIdAndDecimals;
+  assetOut: AssetWithIdAndDecimals;
 }): DirectSwapQuote {
   if (!poolUtils.isPoolReady(pool)) {
     throw new SwapQuoteError(
       SwapQuoteErrorType.NoAvailablePoolError,
-      "There is not an available pool for this swap. However, you can enable swap router and try to perform this swap with multiple pools."
+      "There is not an available pool for this asset pair"
     );
   }
+
+  const [
+    {id: assetInID, decimals: assetInDecimals},
+    {id: assetOutID, decimals: assetOutDecimals}
+  ] = [assetIn, assetOut];
 
   const assetInAmount = BigInt(amount);
   const totalFeeShare = pool.totalFeeShare!;
@@ -336,7 +329,10 @@ function getFixedInputDirectSwapQuote({
     outputSupply,
     swapInputAmount: assetInAmount,
     totalFeeShare,
-    decimals
+    decimals: {
+      assetIn: assetInDecimals,
+      assetOut: assetOutDecimals
+    }
   });
 
   if (swapOutputAmount > outputSupply) {
@@ -360,31 +356,34 @@ function getFixedInputDirectSwapQuote({
     assetOutAmount: swapOutputAmount,
     swapFee: Number(totalFeeAmount),
     rate:
-      convertFromBaseUnits(decimals.assetOut, Number(swapOutputAmount)) /
-      convertFromBaseUnits(decimals.assetIn, Number(assetInAmount)),
+      convertFromBaseUnits(assetOutDecimals, Number(swapOutputAmount)) /
+      convertFromBaseUnits(assetInDecimals, Number(assetInAmount)),
     priceImpact
   };
 }
 
 function getFixedOutputDirectSwapQuote({
   amount,
-  assetInID,
-  assetOutID,
-  decimals,
+  assetIn,
+  assetOut,
   pool
 }: {
   pool: V2PoolInfo | null;
   amount: number | bigint;
-  assetInID: number;
-  assetOutID: number;
-  decimals: {assetIn: number; assetOut: number};
+  assetIn: AssetWithIdAndDecimals;
+  assetOut: AssetWithIdAndDecimals;
 }): SwapQuote {
   if (!pool || !poolUtils.isPoolReady(pool)) {
     throw new SwapQuoteError(
       SwapQuoteErrorType.NoAvailablePoolError,
-      "There is not an available pool for this swap. However, you can enable swap router and try to perform this swap with multiple pools."
+      "There is not an available pool for this asset pair"
     );
   }
+
+  const [
+    {id: assetInID, decimals: assetInDecimals},
+    {id: assetOutID, decimals: assetOutDecimals}
+  ] = [assetIn, assetOut];
 
   const assetOutAmount = BigInt(amount);
   const totalFeeShare = pool.totalFeeShare!;
@@ -409,7 +408,10 @@ function getFixedOutputDirectSwapQuote({
     outputSupply,
     swapOutputAmount: assetOutAmount,
     totalFeeShare,
-    decimals
+    decimals: {
+      assetIn: assetInDecimals,
+      assetOut: assetOutDecimals
+    }
   });
 
   if (assetOutAmount > outputSupply) {
@@ -437,8 +439,8 @@ function getFixedOutputDirectSwapQuote({
         assetOutAmount,
         swapFee: Number(totalFeeAmount),
         rate:
-          convertFromBaseUnits(decimals.assetOut, Number(assetOutAmount)) /
-          convertFromBaseUnits(decimals.assetIn, Number(swapInputAmount)),
+          convertFromBaseUnits(assetOutDecimals, Number(assetOutAmount)) /
+          convertFromBaseUnits(assetInDecimals, Number(swapInputAmount)),
         priceImpact
       }
     }
@@ -450,17 +452,15 @@ function getFixedOutputDirectSwapQuote({
  */
 async function getFixedInputSwapQuote({
   amount,
-  assetInID,
-  assetOutID,
-  decimals,
+  assetIn,
+  assetOut,
   isSwapRouterEnabled,
   network,
   pool
 }: {
   amount: number | bigint;
-  assetInID: number;
-  assetOutID: number;
-  decimals: {assetIn: number; assetOut: number};
+  assetIn: AssetWithIdAndDecimals;
+  assetOut: AssetWithIdAndDecimals;
   network: SupportedNetwork;
   pool: V2PoolInfo | null;
   isSwapRouterEnabled?: boolean;
@@ -473,9 +473,8 @@ async function getFixedInputSwapQuote({
         try {
           const quote = getFixedInputDirectSwapQuote({
             amount,
-            assetInID,
-            assetOutID,
-            decimals,
+            assetIn,
+            assetOut,
             pool
           });
 
@@ -496,7 +495,7 @@ async function getFixedInputSwapQuote({
       Promise.reject(
         new SwapQuoteError(
           SwapQuoteErrorType.NoAvailablePoolError,
-          "There is not an available pool for this swap. However, you can enable swap router and try to perform this swap with multiple pools."
+          "There is not an available pool for this asset pair"
         )
       )
     );
@@ -504,27 +503,13 @@ async function getFixedInputSwapQuote({
 
   if (isSwapRouterEnabled) {
     quotePromises.push(
-      (async () => {
-        const data = await getSwapRoute({
-          amount,
-          assetInID,
-          assetOutID,
-          swapType: SwapType.FixedInput,
-          network
-        });
-
-        if (data.route.length < 2) {
-          throw new SwapQuoteError(
-            SwapQuoteErrorType.SwapRouterNoRouteError,
-            "Swap router couldn't find a route for this swap."
-          );
-        }
-
-        return {
-          type: SwapQuoteType.Router,
-          data
-        };
-      })()
+      getSwapRoute({
+        amount,
+        assetInID: assetIn.id,
+        assetOutID: assetOut.id,
+        swapType: SwapType.FixedInput,
+        network
+      }).then((data) => ({type: SwapQuoteType.Router, data}))
     );
   }
 
@@ -538,18 +523,16 @@ async function getFixedInputSwapQuote({
  */
 async function getFixedOutputSwapQuote({
   amount,
-  assetInID,
-  assetOutID,
-  decimals,
+  assetIn,
+  assetOut,
   isSwapRouterEnabled,
   network,
   pool
 }: {
   amount: number | bigint;
-  assetInID: number;
-  assetOutID: number;
+  assetIn: AssetWithIdAndDecimals;
+  assetOut: AssetWithIdAndDecimals;
   pool: V2PoolInfo | null;
-  decimals: {assetIn: number; assetOut: number};
   network: SupportedNetwork;
   isSwapRouterEnabled?: boolean;
 }): Promise<SwapQuote> {
@@ -559,9 +542,8 @@ async function getFixedOutputSwapQuote({
         resolve(
           getFixedOutputDirectSwapQuote({
             amount,
-            assetInID,
-            assetOutID,
-            decimals,
+            assetIn,
+            assetOut,
             pool
           })
         );
@@ -573,20 +555,13 @@ async function getFixedOutputSwapQuote({
 
   if (isSwapRouterEnabled) {
     quotePromises.push(
-      (async () => {
-        const data = await getSwapRoute({
-          amount,
-          assetInID,
-          assetOutID,
-          swapType: SwapType.FixedOutput,
-          network
-        });
-
-        return {
-          type: SwapQuoteType.Router,
-          data
-        };
-      })()
+      getSwapRoute({
+        amount,
+        assetInID: assetIn.id,
+        assetOutID: assetOut.id,
+        swapType: SwapType.FixedOutput,
+        network
+      }).then((data) => ({type: SwapQuoteType.Router, data}))
     );
   }
 
