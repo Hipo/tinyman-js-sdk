@@ -26,7 +26,6 @@ import {
   V2SwapTxnGroupIndices
 } from "./constants";
 import {isAlgo} from "../../util/asset/assetUtils";
-import {getAppCallInnerAssetData} from "../../util/transaction/transactionUtils";
 import {
   calculatePriceImpact,
   getAssetInFromSwapQuote,
@@ -34,13 +33,14 @@ import {
   getBestQuote,
   isSwapQuoteErrorCausedByAmount
 } from "../common/utils";
+import {getAppCallInnerAssetData} from "../../util/transaction/transactionUtils";
+import {AssetWithIdAndAmount, AssetWithIdAndDecimals} from "../../util/asset/assetModels";
 import {tinymanJSSDKConfig} from "../../config";
 import {CONTRACT_VERSION} from "../../contract/constants";
 import {generateSwapRouterTxns, getSwapRoute} from "./router/swap-router";
 import {poolUtils} from "../../util/pool";
 import SwapQuoteError, {SwapQuoteErrorType} from "../../util/error/SwapQuoteError";
 import {getSwapAppCallFeeAmount, isSwapAssetInAmountLow} from "./util";
-import {AssetWithIdAndDecimals, AssetWithIdAndAmount} from "../../util/asset/assetModels";
 
 async function generateTxns(
   params: GenerateSwapTxnsParams
@@ -160,6 +160,7 @@ async function execute({
 }): Promise<V2SwapExecution> {
   const [{confirmedRound, txnID}] = await sendAndWaitRawTransaction(client, [signedTxns]);
   const assetOutId = getAssetOutFromSwapQuote(quote).id;
+  const assetIn = getAssetInFromSwapQuote(quote);
   let innerTxnAssetData: AssetWithIdAndAmount[] | undefined;
 
   try {
@@ -167,8 +168,6 @@ async function execute({
   } catch (_error) {
     // We can ignore this error since the main execution was successful
   }
-
-  const assetIn = getAssetInFromSwapQuote(quote);
 
   /**
    * If the swap type if Fixed Output, usually there will be a difference between
