@@ -325,6 +325,20 @@ export function encodeInteger(number) {
   return buf;
 }
 
+//  TODO: Check if this function is same as encodeInteger
+export function intToBytes(num: number, length = 8): Uint8Array {
+  const byteArray = new Uint8Array(length);
+  let newNum = num;
+
+  for (let i = length - 1; i >= 0; i--) {
+    // eslint-disable-next-line no-bitwise
+    byteArray[i] = newNum & 0xff;
+    // eslint-disable-next-line no-bitwise
+    newNum >>= 8;
+  }
+  return byteArray;
+}
+
 /**
  * Converts a text into bytes
  */
